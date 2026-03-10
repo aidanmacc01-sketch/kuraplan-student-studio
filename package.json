@@ -1,0 +1,15 @@
+{
+  "name": "kuraplan-student-studio",
+  "version": "1.0.0",
+  "description": "Kuraplan Student Studio – full-stack MVP",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm:server\" \"npm:client\"",
+    "server": "npm start --prefix server",
+    "client": "npm run dev --prefix client",
+    "install:all": "npm install && npm install --prefix server && npm install --prefix client"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
