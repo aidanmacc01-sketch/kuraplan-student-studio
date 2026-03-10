@@ -14,13 +14,23 @@
 
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 
 const app = express();
-const PORT = 4000;
+const PORT = process.env.PORT || 4000;
+const IS_PROD = process.env.NODE_ENV === 'production';
 
 // ── Middleware ────────────────────────────────────────────────────
-app.use(cors({ origin: 'http://localhost:3000' }));
+// In production, frontend is served from the same origin — no CORS needed.
+// In dev, allow localhost:3000 (Vite dev server).
+app.use(cors({ origin: IS_PROD ? false : 'http://localhost:3000' }));
 app.use(express.json());
+
+// ── Serve React build in production ──────────────────────────────
+if (IS_PROD) {
+  const distPath = path.join(__dirname, '../client/dist');
+  app.use(express.static(distPath));
+}
 
 // ── Mock syllabus data (same set exposed to client for reference) ─
 const MOCK_SYLLABUS = {
@@ -246,9 +256,19 @@ app.post('/api/generate', (req, res) => {
   }, 900); // 900 ms simulated latency
 });
 
+// ── Catch-all: serve React app for any non-API route (production) ─
+if (IS_PROD) {
+  const distPath = path.join(__dirname, '../client/dist');
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
 // ── Start ─────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`\n🎓 Kuraplan API server running at http://localhost:${PORT}`);
+  const url = IS_PROD ? `http://0.0.0.0:${PORT}` : `http://localhost:${PORT}`;
+  console.log(`\n🎓 Kuraplan Student Studio server running at ${url}`);
+  console.log(`   Mode: ${IS_PROD ? 'PRODUCTION (serving React build)' : 'DEVELOPMENT'}`);
   console.log('   POST /api/generate  – generate worksheet content');
   console.log('   GET  /api/syllabus  – retrieve mock syllabus data\n');
 });
