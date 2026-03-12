@@ -15,10 +15,16 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+require('dotenv').config();
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 const IS_PROD = process.env.NODE_ENV === 'production';
+
+// Initialize Gemini
+const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
+const model = genAI ? genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }) : null;
 
 // ── Middleware ────────────────────────────────────────────────────
 // In production, frontend is served from the same origin — no CORS needed.
@@ -216,6 +222,58 @@ function generateMockResponse({ state, year, subject, outcomes, difficulty, text
   return { questions, workedExamples, worksheetHtml };
 }
 
+/**
+ * AI INTEGRATION POINT: Gemini Implementation
+ */
+async function generateGeminiResponse(params) {
+  if (!model) {
+    console.warn('GEMINI_API_KEY not found. Falling back to mock data.');
+    return generateMockResponse(params);
+  }
+
+  const { state, year, subject, outcomes, difficulty, text, options } = params;
+  
+  const prompt = `
+    You are an expert Australian education content creator. 
+    Create a study worksheet for a Year ${year} ${subject} student in ${state} based on these outcomes: ${outcomes.join(', ')}.
+    Difficulty level: ${difficulty}.
+    Additional context/original text provided by the student: "${text || 'None'}"
+    
+    Requested components:
+    - Worked Examples: ${options.includeWorkedExamples ? 'Yes' : 'No'}
+    - Multiple Choice Questions (MCQ): ${options.includeMCQ ? 'Yes' : 'No'}
+    - Short Answer: ${options.includeShortAnswer ? 'Yes' : 'No'}
+    - Extended Response: ${options.includeExtendedResponse ? 'Yes' : 'No'}
+
+    Return the response ONLY as a JSON object with this exact structure:
+    {
+      "questions": [
+        { "id": "q1", "type": "MCQ", "outcomeCode": "...", "difficulty": "...", "question": "...", "options": ["A", "B", "C", "D"], "answer": "D", "marks": 1 }
+      ],
+      "workedExamples": [
+        { "id": "we1", "outcomeCode": "...", "title": "...", "steps": ["Step 1...", "Step 2..."], "tip": "..." }
+      ],
+      "worksheetHtml": "..."
+    }
+    
+    The "worksheetHtml" should be a complete, styled HTML document ready for printing. Use a clean, professional academic style (Serif fonts, green accents).
+  `;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    let textResult = response.text();
+    
+    // Clean JSON if model wraps it in markdown blocks
+    textResult = textResult.replace(/```json/g, '').replace(/```/g, '').trim();
+    
+    return JSON.parse(textResult);
+  } catch (error) {
+    console.error('Gemini API Error:', error);
+    return generateMockResponse(params); // Fallback
+  }
+}
+
 // ── Routes ────────────────────────────────────────────────────────
 
 // Health check
@@ -226,10 +284,8 @@ app.get('/api/syllabus', (req, res) => res.json(MOCK_SYLLABUS));
 
 /**
  * POST /api/generate
- * Body: { state, year, subject, outcomes[], difficulty, text, options }
- * Returns: { questions, workedExamples, worksheetHtml }
  */
-app.post('/api/generate', (req, res) => {
+app.post('/api/generate', async (req, res) => {
   const {
     state = 'NSW',
     year = '12',
@@ -244,16 +300,13 @@ app.post('/api/generate', (req, res) => {
     return res.status(400).json({ error: 'Please select at least one syllabus outcome.' });
   }
 
-  // Simulate a brief processing delay (remove in production)
-  setTimeout(() => {
-    try {
-      const result = generateMockResponse({ state, year, subject, outcomes, difficulty, text, options });
-      res.json(result);
-    } catch (err) {
-      console.error('[/api/generate] Error:', err);
-      res.status(500).json({ error: 'Failed to generate worksheet content.' });
-    }
-  }, 900); // 900 ms simulated latency
+  try {
+    const result = await generateGeminiResponse({ state, year, subject, outcomes, difficulty, text, options });
+    res.json(result);
+  } catch (err) {
+    console.error('[/api/generate] Error:', err);
+    res.status(500).json({ error: 'Failed to generate worksheet content.' });
+  }
 });
 
 // ── Catch-all: serve React app for any non-API route (production) ─
