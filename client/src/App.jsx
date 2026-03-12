@@ -6,6 +6,7 @@ import PanelOutcomes from './components/PanelOutcomes.jsx';
 import PanelResults from './components/PanelResults.jsx';
 import BottomBar from './components/BottomBar.jsx';
 import WorksheetDetails from './components/WorksheetDetails.jsx';
+import { generateStudySet } from './utils/mockGenerate.js';
 
 // ── Mock syllabus data (mirrors server's mock, loaded statically for instant UI) ──
 const SYLLABUS_OUTCOMES = {
@@ -144,11 +145,11 @@ export default function App() {
         setIsLoading(true);
         setResults(null);
 
-        try {
-            const response = await fetch('/api/generate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+        // AI INTEGRATION POINT: replace the setTimeout below with a real fetch() to your LLM API.
+        // The returned object must have the shape: { questions, workedExamples, worksheetHtml }
+        setTimeout(() => {
+            try {
+                const data = generateStudySet({
                     state: selectedState,
                     year: String(year),
                     subject,
@@ -156,20 +157,15 @@ export default function App() {
                     difficulty: difficultyKeys[difficulty],
                     text: pastedText,
                     options,
-                }),
-            });
-            if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.error || 'Server error');
+                });
+                setResults(data);
+                setLastGenerated(new Date());
+            } catch (err) {
+                setError(err.message || 'Failed to generate.');
+            } finally {
+                setIsLoading(false);
             }
-            const data = await response.json();
-            setResults(data);
-            setLastGenerated(new Date());
-        } catch (err) {
-            setError(err.message || 'Failed to generate. Is the server running?');
-        } finally {
-            setIsLoading(false);
-        }
+        }, 900); // simulated latency – remove when using a real API
     }
 
     function handleDownloadPDF() {
